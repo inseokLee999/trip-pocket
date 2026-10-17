@@ -17,6 +17,7 @@ type StatusFilter = "all" | PlaceStatus;
 type SortOrder = "upcoming" | "priority" | "newest" | "cost";
 
 const categories = placeCategories;
+const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY;
 
 const emptyDraft: PlaceDraft = {
   name: "",
@@ -53,8 +54,19 @@ function formatCost(cost: number) {
   return new Intl.NumberFormat("ko-KR").format(cost);
 }
 
-function mapUrl(place: TravelPlace) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.country} ${place.city} ${place.name}`)}`;
+function placeSearchQuery(place: TravelPlace) {
+  return `${place.name}, ${place.city}, ${place.country}`;
+}
+
+function mapEmbedUrl(query: string) {
+  if (!googleMapsApiKey) return "";
+  const params = new URLSearchParams({
+    key: googleMapsApiKey,
+    q: query,
+    language: "ko",
+    region: "KR",
+  });
+  return `https://www.google.com/maps/embed/v1/search?${params.toString()}`;
 }
 
 export default function TripDashboard() {
@@ -69,6 +81,9 @@ export default function TripDashboard() {
   const [tripFilter, setTripFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("upcoming");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mapPlace, setMapPlace] = useState<TravelPlace | null>(null);
+  const [mapQuery, setMapQuery] = useState("");
+  const [activeMapQuery, setActiveMapQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PlaceDraft>(emptyDraft);
   const [formError, setFormError] = useState("");
@@ -116,13 +131,16 @@ export default function TripDashboard() {
   }, [notice]);
 
   useEffect(() => {
-    if (!isModalOpen) return;
+    if (!isModalOpen && !mapPlace) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeModal();
+      if (event.key === "Escape") {
+        if (mapPlace) closeMap();
+        else closeModal();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, mapPlace]);
 
   const filteredPlaces = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
@@ -181,6 +199,25 @@ export default function TripDashboard() {
     setIsModalOpen(false);
     setEditingId(null);
     setFormError("");
+  }
+
+  function openMap(place: TravelPlace) {
+    const query = placeSearchQuery(place);
+    setMapPlace(place);
+    setMapQuery(query);
+    setActiveMapQuery(query);
+  }
+
+  function closeMap() {
+    setMapPlace(null);
+    setMapQuery("");
+    setActiveMapQuery("");
+  }
+
+  function handleMapSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = mapQuery.trim();
+    if (query) setActiveMapQuery(query);
   }
 
   function updateDraft<K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) {
@@ -429,7 +466,7 @@ export default function TripDashboard() {
                       <span>{place.estimatedCost > 0 ? `예상 ${formatCost(place.estimatedCost)}원` : "비용 미정"}</span>
                     </div>
                     <div className="flex gap-1">
-                      <a href={mapUrl(place)} target="_blank" rel="noreferrer" className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)] hover:bg-[var(--soft)]">지도</a>
+                      <button onClick={() => openMap(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)] hover:bg-[var(--soft)]">지도</button>
                       <button onClick={() => openEditModal(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">수정</button>
                       <button onClick={() => deletePlace(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">삭제</button>
                     </div>
@@ -541,6 +578,49 @@ export default function TripDashboard() {
                 <button type="submit" disabled={isSaving} className="flex-1 rounded-lg bg-[var(--brand)] px-5 py-2.5 font-semibold text-white hover:bg-[var(--brand-strong)] disabled:cursor-wait disabled:opacity-60">{isSaving ? "저장 중…" : editingId ? "수정 완료" : "여행지 저장"}</button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {mapPlace && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeMap(); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="map-dialog-title" className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:h-[78vh] sm:rounded-xl">
+            <div className="border-b border-[var(--line)] p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-[var(--brand)]">Google Maps</p>
+                  <h2 id="map-dialog-title" className="mt-1 truncate text-xl font-bold">{mapPlace.name} 위치 찾기</h2>
+                  <p className="mt-1 text-sm text-[var(--muted)]">검색 결과를 확인하고 장소명이 다르면 아래 검색어를 수정하세요.</p>
+                </div>
+                <button onClick={closeMap} className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-xl text-slate-500 hover:bg-slate-100" aria-label="지도 닫기">×</button>
+              </div>
+
+              <form onSubmit={handleMapSearch} className="mt-4 flex gap-2">
+                <label className="sr-only" htmlFor="map-search">Google Maps 장소 검색</label>
+                <input id="map-search" value={mapQuery} onChange={(event) => setMapQuery(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-[var(--line)] px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" placeholder="장소명, 도시, 국가" />
+                <button type="submit" className="shrink-0 rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-bold text-white hover:bg-[var(--brand-strong)]">검색</button>
+              </form>
+            </div>
+
+            {googleMapsApiKey ? (
+              <iframe
+                key={activeMapQuery}
+                title={`${activeMapQuery} Google Maps 검색 결과`}
+                src={mapEmbedUrl(activeMapQuery)}
+                className="min-h-0 flex-1 border-0"
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            ) : (
+              <div className="grid flex-1 place-items-center bg-slate-50 px-6 text-center">
+                <div className="max-w-md">
+                  <p className="text-lg font-bold">Google Maps 연결 설정이 필요합니다</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Maps Embed API 키를 환경 변수에 등록하면 이 영역에서 실제 장소 검색 결과가 표시됩니다.</p>
+                  <code className="mt-4 inline-block rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-slate-600">NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY</code>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       )}

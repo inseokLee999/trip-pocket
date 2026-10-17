@@ -11,7 +11,7 @@
 - 꼭 가기·관심·나중에 우선순위
 - 장소별 예상 비용과 전체 예정 비용 합계
 - 방문일·우선순위·비용·저장일 정렬
-- Google Maps 장소 검색 바로가기
+- 앱 내부 Google Maps 실제 장소 검색
 - 여행지 등록, 수정, 삭제
 - 장소명, 국가, 도시, 메모 검색
 - 방문 상태 및 카테고리 필터
@@ -44,6 +44,11 @@ psql -d trip_pocket -f db/schema.sql
 추가됩니다. 기존 예시 여행지는 첫 번째로 가입한 계정에 연결됩니다.
 
 ## 로컬 실행
+
+앱 내부 지도를 사용하려면 Google Cloud에서 `Maps Embed API`를 활성화하고,
+웹사이트 제한을 설정한 API 키를 `.env.local`의
+`NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY`에 입력합니다. Maps Embed API는 키와
+결제 계정 등록이 필요하므로 키를 저장소에 커밋하지 마세요.
 
 ```bash
 npm install
