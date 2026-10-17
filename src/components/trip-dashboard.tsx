@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import AuthPanel from "@/components/auth-panel";
 import {
   placeCategories,
   type PlaceCategory,
@@ -9,6 +10,7 @@ import {
   type PlaceStatus,
   type TravelPlace,
 } from "@/types/travel-place";
+import type { AuthUser } from "@/types/user";
 
 type StatusFilter = "all" | PlaceStatus;
 
@@ -40,6 +42,7 @@ function daysUntil(date: string, referenceDate: string) {
 }
 
 export default function TripDashboard() {
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [places, setPlaces] = useState<TravelPlace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,11 +59,19 @@ export default function TripDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadPlaces() {
+    async function bootstrap() {
       try {
-        const response = await fetch("/api/places", { cache: "no-store" });
-        const payload = (await response.json()) as { places?: TravelPlace[]; message?: string };
-        if (!response.ok) throw new Error(payload.message);
+        const meResponse = await fetch("/api/auth/me", { cache: "no-store" });
+        if (!meResponse.ok) {
+          if (!cancelled) setUser(null);
+          return;
+        }
+        const mePayload = (await meResponse.json()) as { user: AuthUser };
+        if (!cancelled) setUser(mePayload.user);
+
+        const placesResponse = await fetch("/api/places", { cache: "no-store" });
+        const payload = (await placesResponse.json()) as { places?: TravelPlace[]; message?: string };
+        if (!placesResponse.ok) throw new Error(payload.message);
         if (!cancelled) setPlaces(payload.places ?? []);
       } catch {
         if (!cancelled) setNotice("데이터베이스에서 여행지를 불러오지 못했습니다.");
@@ -72,7 +83,7 @@ export default function TripDashboard() {
     const timer = window.setTimeout(() => {
       setTodayDate(new Date().toISOString().slice(0, 10));
     }, 0);
-    void loadPlaces();
+    void bootstrap();
 
     return () => {
       cancelled = true;
@@ -230,6 +241,37 @@ export default function TripDashboard() {
     setCategoryFilter("all");
   }
 
+  async function handleAuthenticated(authenticatedUser: AuthUser) {
+    setUser(authenticatedUser);
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/places", { cache: "no-store" });
+      const payload = (await response.json()) as { places?: TravelPlace[]; message?: string };
+      if (!response.ok) throw new Error(payload.message);
+      setPlaces(payload.places ?? []);
+    } catch {
+      setNotice("여행지를 불러오지 못했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      setPlaces([]);
+      setIsModalOpen(false);
+    }
+  }
+
+  if (user === undefined) {
+    return <main className="grid min-h-screen place-items-center bg-[var(--background)] text-sm text-[var(--muted)]">로그인 상태를 확인하는 중입니다.</main>;
+  }
+
+  if (user === null) return <AuthPanel onAuthenticated={handleAuthenticated} />;
+
   return (
     <main className="min-h-screen bg-[var(--background)]">
       <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-white/95 backdrop-blur">
@@ -241,9 +283,16 @@ export default function TripDashboard() {
               <p className="text-[11px] text-[var(--muted)]">개인 여행지 관리</p>
             </div>
           </a>
-          <button onClick={openCreateModal} className="rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]">
-            <span className="sm:hidden">+ 추가</span><span className="hidden sm:inline">+ 여행지 추가</span>
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-bold">{user.name}</p>
+              <p className="max-w-44 truncate text-[11px] text-[var(--muted)]">{user.email}</p>
+            </div>
+            <button onClick={handleLogout} className="rounded-lg border border-[var(--line)] px-3 py-2.5 text-sm font-semibold text-[var(--muted)] hover:bg-slate-50">로그아웃</button>
+            <button onClick={openCreateModal} className="rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]">
+              <span className="sm:hidden">+ 추가</span><span className="hidden sm:inline">+ 여행지 추가</span>
+            </button>
+          </div>
         </div>
       </header>
 

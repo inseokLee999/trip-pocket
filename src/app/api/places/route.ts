@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { db } from "@/lib/db";
 import { parsePlaceDraft } from "@/lib/place-input";
+import { getCurrentUser } from "@/lib/session";
 import type { TravelPlace } from "@/types/travel-place";
 
 const selectFields = `
@@ -18,11 +19,13 @@ const selectFields = `
 
 export async function GET() {
   try {
-    const result = await db.query<TravelPlace>(`
-      SELECT ${selectFields}
-      FROM travel_places
-      ORDER BY created_at DESC
-    `);
+    const user = await getCurrentUser();
+    if (!user) return Response.json({ message: "로그인이 필요합니다." }, { status: 401 });
+
+    const result = await db.query<TravelPlace>(
+      `SELECT ${selectFields} FROM travel_places WHERE user_id = $1 ORDER BY created_at DESC`,
+      [user.id],
+    );
 
     return Response.json({ places: result.rows });
   } catch (error) {
@@ -33,6 +36,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return Response.json({ message: "로그인이 필요합니다." }, { status: 401 });
+
     const draft = parsePlaceDraft(await request.json());
     if (!draft) {
       return Response.json({ message: "입력한 여행지 정보를 확인해 주세요." }, { status: 400 });
@@ -41,13 +47,14 @@ export async function POST(request: Request) {
     const result = await db.query<TravelPlace>(
       `
         INSERT INTO travel_places (
-          id, name, country, city, category, status, visit_date, memo
+          id, user_id, name, country, city, category, status, visit_date, memo
         )
-        VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::date, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::date, $9)
         RETURNING ${selectFields}
       `,
       [
         randomUUID(),
+        user.id,
         draft.name,
         draft.country,
         draft.city,

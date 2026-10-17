@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { parsePlaceDraft } from "@/lib/place-input";
+import { getCurrentUser } from "@/lib/session";
 import type { TravelPlace } from "@/types/travel-place";
 
 const returningFields = `
@@ -16,6 +17,9 @@ const returningFields = `
 
 export async function PUT(request: Request, context: RouteContext<"/api/places/[id]">) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return Response.json({ message: "로그인이 필요합니다." }, { status: 401 });
+
     const { id } = await context.params;
     const draft = parsePlaceDraft(await request.json());
     if (!draft) {
@@ -34,7 +38,7 @@ export async function PUT(request: Request, context: RouteContext<"/api/places/[
           visit_date = NULLIF($7, '')::date,
           memo = $8,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
+        WHERE id = $1 AND user_id = $9
         RETURNING ${returningFields}
       `,
       [
@@ -46,6 +50,7 @@ export async function PUT(request: Request, context: RouteContext<"/api/places/[
         draft.status,
         draft.visitDate,
         draft.memo,
+        user.id,
       ],
     );
 
@@ -62,8 +67,11 @@ export async function PUT(request: Request, context: RouteContext<"/api/places/[
 
 export async function DELETE(_request: Request, context: RouteContext<"/api/places/[id]">) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return Response.json({ message: "로그인이 필요합니다." }, { status: 401 });
+
     const { id } = await context.params;
-    const result = await db.query("DELETE FROM travel_places WHERE id = $1", [id]);
+    const result = await db.query("DELETE FROM travel_places WHERE id = $1 AND user_id = $2", [id, user.id]);
 
     if (result.rowCount === 0) {
       return Response.json({ message: "여행지를 찾을 수 없습니다." }, { status: 404 });
