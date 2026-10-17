@@ -2,26 +2,17 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type PlaceStatus = "wishlist" | "visited";
-type PlaceCategory = "관광지" | "자연" | "맛집" | "숙소" | "휴양" | "기타";
+import {
+  placeCategories,
+  type PlaceCategory,
+  type PlaceDraft,
+  type PlaceStatus,
+  type TravelPlace,
+} from "@/types/travel-place";
 
-type TravelPlace = {
-  id: string;
-  name: string;
-  country: string;
-  city: string;
-  category: PlaceCategory;
-  status: PlaceStatus;
-  visitDate: string;
-  memo: string;
-  createdAt: string;
-};
-
-type PlaceDraft = Omit<TravelPlace, "id" | "createdAt">;
 type StatusFilter = "all" | PlaceStatus;
 
-const STORAGE_KEY = "trip-pocket-places-v1";
-const categories: PlaceCategory[] = ["관광지", "자연", "맛집", "숙소", "휴양", "기타"];
+const categories = placeCategories;
 
 const emptyDraft: PlaceDraft = {
   name: "",
@@ -32,42 +23,6 @@ const emptyDraft: PlaceDraft = {
   visitDate: "",
   memo: "",
 };
-
-const initialPlaces: TravelPlace[] = [
-  {
-    id: "jeju-seongsan",
-    name: "성산일출봉",
-    country: "대한민국",
-    city: "제주",
-    category: "자연",
-    status: "wishlist",
-    visitDate: "2026-11-08",
-    memo: "해 뜨기 전에 도착해서 일출 보기",
-    createdAt: "2026-10-01T09:00:00.000Z",
-  },
-  {
-    id: "kyoto-arashiyama",
-    name: "아라시야마",
-    country: "일본",
-    city: "교토",
-    category: "관광지",
-    status: "wishlist",
-    visitDate: "2027-03-21",
-    memo: "아침 일찍 대나무 숲 산책하기",
-    createdAt: "2026-10-03T09:00:00.000Z",
-  },
-  {
-    id: "busan-haeundae",
-    name: "해운대 해수욕장",
-    country: "대한민국",
-    city: "부산",
-    category: "휴양",
-    status: "visited",
-    visitDate: "2026-08-16",
-    memo: "해변 열차 타고 청사포까지 이동",
-    createdAt: "2026-08-01T09:00:00.000Z",
-  },
-];
 
 function formatDate(date: string) {
   if (!date) return "날짜 미정";
@@ -85,8 +40,9 @@ function daysUntil(date: string, referenceDate: string) {
 }
 
 export default function TripDashboard() {
-  const [places, setPlaces] = useState<TravelPlace[]>(initialPlaces);
-  const [hydrated, setHydrated] = useState(false);
+  const [places, setPlaces] = useState<TravelPlace[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [todayDate, setTodayDate] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -98,32 +54,31 @@ export default function TripDashboard() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    let savedPlaces: TravelPlace[] | null = null;
-    let loadError = false;
-    try {
-      const storedPlaces = window.localStorage.getItem(STORAGE_KEY);
-      if (storedPlaces) {
-        const parsed = JSON.parse(storedPlaces) as TravelPlace[];
-        if (Array.isArray(parsed)) savedPlaces = parsed;
+    let cancelled = false;
+
+    async function loadPlaces() {
+      try {
+        const response = await fetch("/api/places", { cache: "no-store" });
+        const payload = (await response.json()) as { places?: TravelPlace[]; message?: string };
+        if (!response.ok) throw new Error(payload.message);
+        if (!cancelled) setPlaces(payload.places ?? []);
+      } catch {
+        if (!cancelled) setNotice("데이터베이스에서 여행지를 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
-    } catch {
-      loadError = true;
     }
 
     const timer = window.setTimeout(() => {
-      if (savedPlaces) setPlaces(savedPlaces);
-      if (loadError) setNotice("저장된 데이터를 불러오지 못해 기본 목록을 보여드려요.");
       setTodayDate(new Date().toISOString().slice(0, 10));
-      setHydrated(true);
     }, 0);
+    void loadPlaces();
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(places));
-  }, [hydrated, places]);
 
   useEffect(() => {
     if (!notice) return;
@@ -191,50 +146,82 @@ export default function TripDashboard() {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.name.trim() || !draft.country.trim() || !draft.city.trim()) {
       setFormError("장소명, 국가, 도시는 꼭 입력해 주세요.");
       return;
     }
 
-    if (editingId) {
-      setPlaces((current) =>
-        current.map((place) =>
-          place.id === editingId
-            ? { ...place, ...draft, name: draft.name.trim(), country: draft.country.trim(), city: draft.city.trim(), memo: draft.memo.trim() }
-            : place,
-        ),
-      );
-      setNotice("여행지 정보를 수정했어요.");
-    } else {
-      setPlaces((current) => [
-        {
-          ...draft,
-          id: crypto.randomUUID(),
-          name: draft.name.trim(),
-          country: draft.country.trim(),
-          city: draft.city.trim(),
-          memo: draft.memo.trim(),
-          createdAt: new Date().toISOString(),
-        },
-        ...current,
-      ]);
-      setNotice("새 여행지를 보관함에 담았어요.");
+    const requestBody: PlaceDraft = {
+      ...draft,
+      name: draft.name.trim(),
+      country: draft.country.trim(),
+      city: draft.city.trim(),
+      memo: draft.memo.trim(),
+    };
+
+    setIsSaving(true);
+    setFormError("");
+    try {
+      const response = await fetch(editingId ? `/api/places/${editingId}` : "/api/places", {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const payload = (await response.json()) as { place?: TravelPlace; message?: string };
+      if (!response.ok || !payload.place) {
+        throw new Error(payload.message ?? "여행지를 저장하지 못했습니다.");
+      }
+
+      if (editingId) {
+        setPlaces((current) => current.map((place) => (place.id === editingId ? payload.place! : place)));
+        setNotice("여행지 정보를 수정했습니다.");
+      } else {
+        setPlaces((current) => [payload.place!, ...current]);
+        setNotice("새 여행지를 저장했습니다.");
+      }
+      closeModal();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "여행지를 저장하지 못했습니다.");
+    } finally {
+      setIsSaving(false);
     }
-    closeModal();
   }
 
-  function toggleStatus(place: TravelPlace) {
+  async function toggleStatus(place: TravelPlace) {
     const nextStatus: PlaceStatus = place.status === "wishlist" ? "visited" : "wishlist";
-    setPlaces((current) => current.map((item) => (item.id === place.id ? { ...item, status: nextStatus } : item)));
-    setNotice(nextStatus === "visited" ? "다녀온 여행지로 표시했어요." : "가고 싶은 곳으로 되돌렸어요.");
+    const { id, createdAt, ...editableFields } = place;
+    void createdAt;
+
+    try {
+      const response = await fetch(`/api/places/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...editableFields, status: nextStatus }),
+      });
+      const payload = (await response.json()) as { place?: TravelPlace; message?: string };
+      if (!response.ok || !payload.place) throw new Error(payload.message);
+      setPlaces((current) => current.map((item) => (item.id === id ? payload.place! : item)));
+      setNotice(nextStatus === "visited" ? "다녀온 여행지로 표시했습니다." : "가고 싶은 곳으로 되돌렸습니다.");
+    } catch {
+      setNotice("방문 상태를 변경하지 못했습니다.");
+    }
   }
 
-  function deletePlace(place: TravelPlace) {
+  async function deletePlace(place: TravelPlace) {
     if (!window.confirm(`‘${place.name}’을(를) 여행지 목록에서 삭제할까요?`)) return;
-    setPlaces((current) => current.filter((item) => item.id !== place.id));
-    setNotice("여행지를 삭제했어요.");
+    try {
+      const response = await fetch(`/api/places/${place.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message);
+      }
+      setPlaces((current) => current.filter((item) => item.id !== place.id));
+      setNotice("여행지를 삭제했습니다.");
+    } catch {
+      setNotice("여행지를 삭제하지 못했습니다.");
+    }
   }
 
   function resetFilters() {
@@ -266,7 +253,7 @@ export default function TripDashboard() {
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">여행지</h1>
             <p className="mt-2 text-sm leading-6 text-[var(--muted)]">가고 싶은 장소와 다녀온 여행을 한곳에서 관리하세요.</p>
           </div>
-          <p className="text-sm text-[var(--muted)]">데이터는 현재 기기에 자동 저장됩니다.</p>
+          <p className="text-sm text-[var(--muted)]">모든 변경사항은 PostgreSQL에 저장됩니다.</p>
         </section>
 
         <aside className="mt-7 grid gap-3 sm:grid-cols-3" aria-label="여행 현황">
@@ -317,7 +304,11 @@ export default function TripDashboard() {
             </div>
           </div>
 
-          {filteredPlaces.length > 0 ? (
+          {isLoading ? (
+            <div className="mt-4 rounded-xl border border-[var(--line)] bg-white px-6 py-14 text-center">
+              <p className="text-sm text-[var(--muted)]">데이터베이스에서 여행지를 불러오는 중입니다.</p>
+            </div>
+          ) : filteredPlaces.length > 0 ? (
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {filteredPlaces.map((place) => (
                 <article key={place.id} className="rounded-xl border border-[var(--line)] bg-white p-5 transition hover:border-slate-300 hover:shadow-[0_6px_20px_rgba(25,40,34,0.05)]">
@@ -422,7 +413,7 @@ export default function TripDashboard() {
 
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={closeModal} className="flex-1 rounded-lg border border-[var(--line)] px-5 py-2.5 font-semibold text-[var(--muted)]">취소</button>
-                <button type="submit" className="flex-1 rounded-lg bg-[var(--brand)] px-5 py-2.5 font-semibold text-white hover:bg-[var(--brand-strong)]">{editingId ? "수정 완료" : "여행지 저장"}</button>
+                <button type="submit" disabled={isSaving} className="flex-1 rounded-lg bg-[var(--brand)] px-5 py-2.5 font-semibold text-white hover:bg-[var(--brand-strong)] disabled:cursor-wait disabled:opacity-60">{isSaving ? "저장 중…" : editingId ? "수정 완료" : "여행지 저장"}</button>
               </div>
             </form>
           </section>
