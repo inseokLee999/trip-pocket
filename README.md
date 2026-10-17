@@ -7,6 +7,11 @@
 - 이메일 회원가입, 로그인, 로그아웃
 - HttpOnly 쿠키 기반 로그인 세션
 - 계정별 여행지 데이터 분리
+- 여행 이름별 장소 그룹과 필터
+- 꼭 가기·관심·나중에 우선순위
+- 장소별 예상 비용과 전체 예정 비용 합계
+- 방문일·우선순위·비용·저장일 정렬
+- Google Maps 장소 검색 바로가기
 - 여행지 등록, 수정, 삭제
 - 장소명, 국가, 도시, 메모 검색
 - 방문 상태 및 카테고리 필터
@@ -14,7 +19,8 @@
 - PostgreSQL 데이터베이스 저장
 - 모바일 및 데스크톱 반응형 화면
 
-프로젝트의 사용자 흐름과 데이터 구조는 [`docs/analysis-design.md`](docs/analysis-design.md)에서 확인할 수 있습니다.
+프로젝트의 사용자 흐름과 데이터 구조는 [`docs/analysis-design.md`](docs/analysis-design.md),
+기능 수요 조사와 우선순위는 [`docs/demand-research.md`](docs/demand-research.md)에서 확인할 수 있습니다.
 
 ## 기술 구성
 

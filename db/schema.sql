@@ -35,8 +35,22 @@ CREATE TABLE IF NOT EXISTS travel_places (
 ALTER TABLE travel_places
   ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
+ALTER TABLE travel_places
+  ADD COLUMN IF NOT EXISTS trip_name VARCHAR(80) NOT NULL DEFAULT '내 여행';
+
+ALTER TABLE travel_places
+  ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'interested'
+    CHECK (priority IN ('must', 'interested', 'later'));
+
+ALTER TABLE travel_places
+  ADD COLUMN IF NOT EXISTS estimated_cost INTEGER NOT NULL DEFAULT 0
+    CHECK (estimated_cost >= 0 AND estimated_cost <= 100000000);
+
 CREATE INDEX IF NOT EXISTS travel_places_user_id_idx
   ON travel_places (user_id);
+
+CREATE INDEX IF NOT EXISTS travel_places_user_trip_idx
+  ON travel_places (user_id, trip_name);
 
 CREATE INDEX IF NOT EXISTS travel_places_status_idx
   ON travel_places (status);

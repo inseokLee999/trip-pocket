@@ -7,12 +7,14 @@ import {
   placeCategories,
   type PlaceCategory,
   type PlaceDraft,
+  type PlacePriority,
   type PlaceStatus,
   type TravelPlace,
 } from "@/types/travel-place";
 import type { AuthUser } from "@/types/user";
 
 type StatusFilter = "all" | PlaceStatus;
+type SortOrder = "upcoming" | "priority" | "newest" | "cost";
 
 const categories = placeCategories;
 
@@ -22,6 +24,9 @@ const emptyDraft: PlaceDraft = {
   city: "",
   category: "관광지",
   status: "wishlist",
+  tripName: "내 여행",
+  priority: "interested",
+  estimatedCost: 0,
   visitDate: "",
   memo: "",
 };
@@ -41,6 +46,17 @@ function daysUntil(date: string, referenceDate: string) {
   return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
 }
 
+const priorityRank: Record<PlacePriority, number> = { must: 0, interested: 1, later: 2 };
+const priorityLabel: Record<PlacePriority, string> = { must: "꼭 가기", interested: "관심", later: "나중에" };
+
+function formatCost(cost: number) {
+  return new Intl.NumberFormat("ko-KR").format(cost);
+}
+
+function mapUrl(place: TravelPlace) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.country} ${place.city} ${place.name}`)}`;
+}
+
 export default function TripDashboard() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [places, setPlaces] = useState<TravelPlace[]>([]);
@@ -50,6 +66,8 @@ export default function TripDashboard() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | PlaceCategory>("all");
+  const [tripFilter, setTripFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("upcoming");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PlaceDraft>(emptyDraft);
@@ -111,15 +129,23 @@ export default function TripDashboard() {
     return places.filter((place) => {
       const matchesQuery =
         normalizedQuery.length === 0 ||
-        [place.name, place.country, place.city, place.memo]
+        [place.name, place.country, place.city, place.memo, place.tripName]
           .join(" ")
           .toLocaleLowerCase("ko-KR")
           .includes(normalizedQuery);
       const matchesStatus = statusFilter === "all" || place.status === statusFilter;
       const matchesCategory = categoryFilter === "all" || place.category === categoryFilter;
-      return matchesQuery && matchesStatus && matchesCategory;
+      const matchesTrip = tripFilter === "all" || place.tripName === tripFilter;
+      return matchesQuery && matchesStatus && matchesCategory && matchesTrip;
+    }).sort((a, b) => {
+      if (sortOrder === "priority") return priorityRank[a.priority] - priorityRank[b.priority];
+      if (sortOrder === "cost") return b.estimatedCost - a.estimatedCost;
+      if (sortOrder === "newest") return b.createdAt.localeCompare(a.createdAt);
+      if (!a.visitDate) return 1;
+      if (!b.visitDate) return -1;
+      return a.visitDate.localeCompare(b.visitDate);
     });
-  }, [categoryFilter, places, query, statusFilter]);
+  }, [categoryFilter, places, query, sortOrder, statusFilter, tripFilter]);
 
   const nextTrip = useMemo(() => {
     return places
@@ -129,6 +155,10 @@ export default function TripDashboard() {
 
   const wishlistCount = places.filter((place) => place.status === "wishlist").length;
   const visitedCount = places.length - wishlistCount;
+  const plannedBudget = places
+    .filter((place) => place.status === "wishlist")
+    .reduce((total, place) => total + place.estimatedCost, 0);
+  const tripNames = useMemo(() => [...new Set(places.map((place) => place.tripName))].sort(), [places]);
 
   function openCreateModal() {
     setEditingId(null);
@@ -159,8 +189,8 @@ export default function TripDashboard() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.country.trim() || !draft.city.trim()) {
-      setFormError("장소명, 국가, 도시는 꼭 입력해 주세요.");
+    if (!draft.name.trim() || !draft.country.trim() || !draft.city.trim() || !draft.tripName.trim()) {
+      setFormError("장소명, 국가, 도시, 여행 이름은 꼭 입력해 주세요.");
       return;
     }
 
@@ -169,6 +199,7 @@ export default function TripDashboard() {
       name: draft.name.trim(),
       country: draft.country.trim(),
       city: draft.city.trim(),
+      tripName: draft.tripName.trim(),
       memo: draft.memo.trim(),
     };
 
@@ -239,6 +270,8 @@ export default function TripDashboard() {
     setQuery("");
     setStatusFilter("all");
     setCategoryFilter("all");
+    setTripFilter("all");
+    setSortOrder("upcoming");
   }
 
   async function handleAuthenticated(authenticatedUser: AuthUser) {
@@ -305,10 +338,14 @@ export default function TripDashboard() {
           <p className="text-sm text-[var(--muted)]">모든 변경사항은 PostgreSQL에 저장됩니다.</p>
         </section>
 
-        <aside className="mt-7 grid gap-3 sm:grid-cols-3" aria-label="여행 현황">
+        <aside className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="여행 현황">
           <div className="rounded-xl border border-[var(--line)] bg-white px-5 py-4">
             <p className="text-xs font-medium text-[var(--muted)]">전체 여행지</p>
             <p className="mt-1 text-2xl font-bold">{places.length}<span className="ml-1 text-sm font-normal text-[var(--muted)]">곳</span></p>
+          </div>
+          <div className="rounded-xl border border-[var(--line)] bg-white px-5 py-4">
+            <p className="text-xs font-medium text-[var(--muted)]">예상 여행 비용</p>
+            <p className="mt-1 text-2xl font-bold">{formatCost(plannedBudget)}<span className="ml-1 text-sm font-normal text-[var(--muted)]">원</span></p>
           </div>
           <div className="rounded-xl border border-[var(--line)] bg-white px-5 py-4">
             <p className="text-xs font-medium text-[var(--muted)]">가고 싶은 곳</p>
@@ -329,7 +366,7 @@ export default function TripDashboard() {
           <div className="rounded-xl border border-[var(--line)] bg-white p-4 sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <h2 id="places-title" className="text-lg font-bold">저장한 여행지</h2>
-              <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto] lg:flex">
+              <div className="grid gap-2 sm:grid-cols-2 lg:flex">
               <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 focus-within:border-[var(--brand)] focus-within:ring-2 focus-within:ring-emerald-100 sm:w-72">
                 <span className="text-[var(--muted)]" aria-hidden="true">검색</span>
                 <span className="sr-only">여행지 검색</span>
@@ -338,6 +375,16 @@ export default function TripDashboard() {
               <select aria-label="카테고리 필터" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as "all" | PlaceCategory)} className="rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)]">
                 <option value="all">모든 카테고리</option>
                 {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+              <select aria-label="여행 필터" value={tripFilter} onChange={(event) => setTripFilter(event.target.value)} className="rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)]">
+                <option value="all">모든 여행</option>
+                {tripNames.map((tripName) => <option key={tripName} value={tripName}>{tripName}</option>)}
+              </select>
+              <select aria-label="정렬 방식" value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)} className="rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)]">
+                <option value="upcoming">방문일 빠른 순</option>
+                <option value="priority">우선순위 순</option>
+                <option value="cost">예상 비용 높은 순</option>
+                <option value="newest">최근 저장 순</option>
               </select>
               </div>
             </div>
@@ -363,21 +410,26 @@ export default function TripDashboard() {
                 <article key={place.id} className="rounded-xl border border-[var(--line)] bg-white p-5 transition hover:border-slate-300 hover:shadow-[0_6px_20px_rgba(25,40,34,0.05)]">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                        <span>{place.country} · {place.city}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{place.category}</span>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <span className="rounded bg-slate-100 px-2 py-1 font-semibold text-slate-600">{place.tripName}</span>
+                        <span className={`rounded px-2 py-1 font-semibold ${place.priority === "must" ? "bg-orange-50 text-orange-700" : "bg-[var(--soft)] text-[var(--brand)]"}`}>{priorityLabel[place.priority]}</span>
                       </div>
                       <h3 className="mt-1.5 truncate text-lg font-bold tracking-tight">{place.name}</h3>
+                      <p className="mt-1 text-xs text-[var(--muted)]">{place.country} · {place.city} · {place.category}</p>
                     </div>
                     <button onClick={() => toggleStatus(place)} className={`shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition ${place.status === "visited" ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100" : "border-emerald-200 bg-[var(--soft)] text-[var(--brand)] hover:bg-emerald-100"}`} aria-label={`${place.name} 방문 상태 변경`}>
                       {place.status === "visited" ? "다녀온 곳" : "가고 싶은 곳"}
                     </button>
                   </div>
                   <p className="mt-4 line-clamp-2 min-h-11 text-sm leading-6 text-[var(--muted)]">{place.memo || "작성한 메모가 없습니다."}</p>
-                  <div className="mt-4 flex items-center justify-between border-t border-[var(--line)] pt-3.5">
-                    <time className="text-xs text-[var(--muted)]">방문일 {formatDate(place.visitDate)}</time>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-3.5">
+                    <div className="text-xs text-[var(--muted)]">
+                      <time>방문일 {formatDate(place.visitDate)}</time>
+                      <span className="mx-1.5" aria-hidden="true">·</span>
+                      <span>{place.estimatedCost > 0 ? `예상 ${formatCost(place.estimatedCost)}원` : "비용 미정"}</span>
+                    </div>
                     <div className="flex gap-1">
+                      <a href={mapUrl(place)} target="_blank" rel="noreferrer" className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)] hover:bg-[var(--soft)]">지도</a>
                       <button onClick={() => openEditModal(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">수정</button>
                       <button onClick={() => deletePlace(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">삭제</button>
                     </div>
@@ -428,6 +480,12 @@ export default function TripDashboard() {
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="tripName" className="text-sm font-bold">여행 이름 <span className="text-rose-500">*</span></label>
+                <input id="tripName" list="trip-name-options" value={draft.tripName} onChange={(event) => updateDraft("tripName", event.target.value)} placeholder="예: 2027 교토 여행" className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
+                <datalist id="trip-name-options">{tripNames.map((tripName) => <option key={tripName} value={tripName} />)}</datalist>
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label htmlFor="category" className="text-sm font-bold">카테고리</label>
@@ -438,6 +496,24 @@ export default function TripDashboard() {
                 <div>
                   <label htmlFor="visitDate" className="text-sm font-bold">방문 예정일</label>
                   <input id="visitDate" type="date" value={draft.visitDate} onChange={(event) => updateDraft("visitDate", event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)]" />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="priority" className="text-sm font-bold">우선순위</label>
+                  <select id="priority" value={draft.priority} onChange={(event) => updateDraft("priority", event.target.value as PlacePriority)} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 outline-none focus:border-[var(--brand)]">
+                    <option value="must">꼭 가기</option>
+                    <option value="interested">관심</option>
+                    <option value="later">나중에</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="estimatedCost" className="text-sm font-bold">예상 비용</label>
+                  <div className="relative mt-2">
+                    <input id="estimatedCost" type="number" min="0" max="100000000" step="1000" value={draft.estimatedCost || ""} onChange={(event) => updateDraft("estimatedCost", Number(event.target.value))} placeholder="0" className="w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 pr-10 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
+                    <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[var(--muted)]">원</span>
+                  </div>
                 </div>
               </div>
 

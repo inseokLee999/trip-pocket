@@ -1,4 +1,5 @@
 export type PlaceStatus = "wishlist" | "visited";
+export type PlacePriority = "must" | "interested" | "later";
 
 export type PlaceCategory =
   | "관광지"
@@ -15,6 +16,9 @@ export type TravelPlace = {
   city: string;
   category: PlaceCategory;
   status: PlaceStatus;
+  tripName: string;
+  priority: PlacePriority;
+  estimatedCost: number;
   visitDate: string;
   memo: string;
   createdAt: string;
@@ -37,4 +41,8 @@ export function isPlaceCategory(value: unknown): value is PlaceCategory {
 
 export function isPlaceStatus(value: unknown): value is PlaceStatus {
   return value === "wishlist" || value === "visited";
+}
+
+export function isPlacePriority(value: unknown): value is PlacePriority {
+  return value === "must" || value === "interested" || value === "later";
 }

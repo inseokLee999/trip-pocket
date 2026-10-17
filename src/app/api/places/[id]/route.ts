@@ -10,6 +10,9 @@ const returningFields = `
   city,
   category,
   status,
+  trip_name AS "tripName",
+  priority,
+  estimated_cost AS "estimatedCost",
   COALESCE(to_char(visit_date, 'YYYY-MM-DD'), '') AS "visitDate",
   memo,
   created_at::text AS "createdAt"
@@ -35,10 +38,13 @@ export async function PUT(request: Request, context: RouteContext<"/api/places/[
           city = $4,
           category = $5,
           status = $6,
-          visit_date = NULLIF($7, '')::date,
-          memo = $8,
+          trip_name = $7,
+          priority = $8,
+          estimated_cost = $9,
+          visit_date = NULLIF($10, '')::date,
+          memo = $11,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND user_id = $9
+        WHERE id = $1 AND user_id = $12
         RETURNING ${returningFields}
       `,
       [
@@ -48,6 +54,9 @@ export async function PUT(request: Request, context: RouteContext<"/api/places/[
         draft.city,
         draft.category,
         draft.status,
+        draft.tripName,
+        draft.priority,
+        draft.estimatedCost,
         draft.visitDate,
         draft.memo,
         user.id,

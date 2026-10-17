@@ -12,6 +12,9 @@ const selectFields = `
   city,
   category,
   status,
+  trip_name AS "tripName",
+  priority,
+  estimated_cost AS "estimatedCost",
   COALESCE(to_char(visit_date, 'YYYY-MM-DD'), '') AS "visitDate",
   memo,
   created_at::text AS "createdAt"
@@ -47,9 +50,9 @@ export async function POST(request: Request) {
     const result = await db.query<TravelPlace>(
       `
         INSERT INTO travel_places (
-          id, user_id, name, country, city, category, status, visit_date, memo
+          id, user_id, name, country, city, category, status, trip_name, priority, estimated_cost, visit_date, memo
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::date, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, '')::date, $12)
         RETURNING ${selectFields}
       `,
       [
@@ -60,6 +63,9 @@ export async function POST(request: Request) {
         draft.city,
         draft.category,
         draft.status,
+        draft.tripName,
+        draft.priority,
+        draft.estimatedCost,
         draft.visitDate,
         draft.memo,
       ],
