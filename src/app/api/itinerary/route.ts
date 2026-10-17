@@ -7,6 +7,7 @@ import type { ItineraryItem } from "@/types/itinerary";
 
 const selectFields = `
   id,
+  COALESCE(place_id::text, '') AS "placeId",
   trip_name AS "tripName",
   title,
   location,
@@ -41,17 +42,21 @@ export async function POST(request: Request) {
     if (!user) return Response.json({ message: "로그인이 필요합니다." }, { status: 401 });
     const draft = parseItineraryDraft(await request.json().catch(() => null));
     if (!draft) return Response.json({ message: "입력한 일정 정보를 확인해 주세요." }, { status: 400 });
+    if (draft.placeId) {
+      const place = await db.query("SELECT 1 FROM travel_places WHERE id = $1 AND user_id = $2", [draft.placeId, user.id]);
+      if (!place.rowCount) return Response.json({ message: "연결할 여행지를 찾을 수 없습니다." }, { status: 400 });
+    }
 
     const result = await db.query<ItineraryItem>(
       `
         INSERT INTO itinerary_items (
-          id, user_id, trip_name, title, location, category, plan_date, start_time, end_time, estimated_cost, memo
+          id, user_id, place_id, trip_name, title, location, category, plan_date, start_time, end_time, estimated_cost, memo
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7::date, NULLIF($8, '')::time, NULLIF($9, '')::time, $10, $11
+          $1, $2, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8::date, NULLIF($9, '')::time, NULLIF($10, '')::time, $11, $12
         )
         RETURNING ${selectFields}
       `,
-      [randomUUID(), user.id, draft.tripName, draft.title, draft.location, draft.category, draft.planDate, draft.startTime, draft.endTime, draft.estimatedCost, draft.memo],
+      [randomUUID(), user.id, draft.placeId, draft.tripName, draft.title, draft.location, draft.category, draft.planDate, draft.startTime, draft.endTime, draft.estimatedCost, draft.memo],
     );
     return Response.json({ item: result.rows[0] }, { status: 201 });
   } catch (error) {

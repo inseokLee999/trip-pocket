@@ -6,6 +6,7 @@ export function parseItineraryDraft(value: unknown): ItineraryDraft | null {
   if (!value || typeof value !== "object") return null;
 
   const input = value as Record<string, unknown>;
+  const placeId = typeof input.placeId === "string" ? input.placeId : "";
   const tripName = typeof input.tripName === "string" ? input.tripName.trim() : "";
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const location = typeof input.location === "string" ? input.location.trim() : "";
@@ -16,11 +17,13 @@ export function parseItineraryDraft(value: unknown): ItineraryDraft | null {
   const estimatedCost = typeof input.estimatedCost === "number" ? input.estimatedCost : Number(input.estimatedCost);
 
   if (!tripName || !title || !location || !/^\d{4}-\d{2}-\d{2}$/.test(planDate)) return null;
+  if (placeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(placeId)) return null;
   if (!isItineraryCategory(input.category)) return null;
   if ((startTime && !timePattern.test(startTime)) || (endTime && !timePattern.test(endTime))) return null;
   if (!Number.isInteger(estimatedCost) || estimatedCost < 0 || estimatedCost > 100_000_000) return null;
 
   return {
+    placeId,
     tripName: tripName.slice(0, 80),
     title: title.slice(0, 120),
     location: location.slice(0, 200),

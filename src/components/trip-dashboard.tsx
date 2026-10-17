@@ -73,6 +73,7 @@ function mapEmbedUrl(query: string) {
 export default function TripDashboard() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [activeView, setActiveView] = useState<"places" | "plan">("places");
+  const [plannerSeed, setPlannerSeed] = useState<TravelPlace | null>(null);
   const [places, setPlaces] = useState<TravelPlace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -313,6 +314,16 @@ export default function TripDashboard() {
     setSortOrder("upcoming");
   }
 
+  function addPlaceToPlan(place: TravelPlace) {
+    setPlannerSeed(place);
+    setActiveView("plan");
+  }
+
+  function showPlaces() {
+    setPlannerSeed(null);
+    setActiveView("places");
+  }
+
   async function handleAuthenticated(authenticatedUser: AuthUser) {
     setUser(authenticatedUser);
     setIsLoading(true);
@@ -372,7 +383,7 @@ export default function TripDashboard() {
 
       <div id="top" className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
         <nav className="mb-7 flex gap-1 rounded-xl border border-[var(--line)] bg-white p-1" aria-label="여행 관리 메뉴">
-          <button onClick={() => setActiveView("places")} aria-current={activeView === "places" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "places" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행지 보관함</button>
+          <button onClick={showPlaces} aria-current={activeView === "places" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "places" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행지 보관함</button>
           <button onClick={() => setActiveView("plan")} aria-current={activeView === "plan" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "plan" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행 계획</button>
         </nav>
 
@@ -478,6 +489,7 @@ export default function TripDashboard() {
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => openMap(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)] hover:bg-[var(--soft)]">지도</button>
+                      <button onClick={() => addPlaceToPlan(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)] hover:bg-[var(--soft)]">일정에 추가</button>
                       <button onClick={() => openEditModal(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100">수정</button>
                       <button onClick={() => deletePlace(place)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">삭제</button>
                     </div>
@@ -498,7 +510,7 @@ export default function TripDashboard() {
         </section>
           </>
         ) : (
-          <ItineraryPlanner places={places} />
+          <ItineraryPlanner places={places} initialPlace={plannerSeed} />
         )}
       </div>
 

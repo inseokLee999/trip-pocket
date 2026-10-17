@@ -36,6 +36,7 @@ function today() {
 
 function createEmptyDraft(tripName = "내 여행"): ItineraryDraft {
   return {
+    placeId: "",
     tripName,
     title: "",
     location: "",
@@ -48,6 +49,28 @@ function createEmptyDraft(tripName = "내 여행"): ItineraryDraft {
   };
 }
 
+function categoryFromPlace(place: TravelPlace): ItineraryCategory {
+  if (place.category === "맛집") return "food";
+  if (place.category === "숙소") return "stay";
+  if (place.category === "기타") return "other";
+  return "sightseeing";
+}
+
+function draftFromPlace(place: TravelPlace): ItineraryDraft {
+  return {
+    placeId: place.id,
+    tripName: place.tripName,
+    title: place.name,
+    location: `${place.name}, ${place.city}, ${place.country}`,
+    category: categoryFromPlace(place),
+    planDate: place.visitDate || today(),
+    startTime: "",
+    endTime: "",
+    estimatedCost: place.estimatedCost,
+    memo: place.memo,
+  };
+}
+
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(new Date(`${date}T00:00:00`));
 }
@@ -56,13 +79,19 @@ function formatCost(cost: number) {
   return new Intl.NumberFormat("ko-KR").format(cost);
 }
 
-export default function ItineraryPlanner({ places }: { places: TravelPlace[] }) {
+export default function ItineraryPlanner({
+  places,
+  initialPlace,
+}: {
+  places: TravelPlace[];
+  initialPlace?: TravelPlace | null;
+}) {
   const [items, setItems] = useState<ItineraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [tripFilter, setTripFilter] = useState("all");
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(Boolean(initialPlace));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<ItineraryDraft>(() => createEmptyDraft());
+  const [draft, setDraft] = useState<ItineraryDraft>(() => initialPlace ? draftFromPlace(initialPlace) : createEmptyDraft());
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -139,6 +168,15 @@ export default function ItineraryPlanner({ places }: { places: TravelPlace[] }) 
 
   function updateDraft<K extends keyof ItineraryDraft>(key: K, value: ItineraryDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectSavedPlace(placeId: string) {
+    if (!placeId) {
+      updateDraft("placeId", "");
+      return;
+    }
+    const place = places.find((candidate) => candidate.id === placeId);
+    if (place) setDraft((current) => ({ ...draftFromPlace(place), startTime: current.startTime, endTime: current.endTime }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -227,7 +265,7 @@ export default function ItineraryPlanner({ places }: { places: TravelPlace[] }) 
                   <div key={item.id} className="grid gap-3 p-5 sm:grid-cols-[90px_minmax(0,1fr)_auto] sm:items-start">
                     <div className="text-sm font-bold text-[var(--brand)]">{item.startTime || "시간 미정"}{item.endTime ? <span className="block text-xs font-normal text-[var(--muted)]">~ {item.endTime}</span> : null}</div>
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{item.title}</h3><span className={`rounded px-2 py-1 text-[11px] font-bold ${categoryStyle[item.category]}`}>{categoryLabel[item.category]}</span><span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{item.tripName}</span></div>
+                      <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold">{item.title}</h3><span className={`rounded px-2 py-1 text-[11px] font-bold ${categoryStyle[item.category]}`}>{categoryLabel[item.category]}</span><span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{item.tripName}</span>{item.placeId && <span className="rounded bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">보관함 연동</span>}</div>
                       <p className="mt-2 text-sm text-[var(--muted)]">장소 · {item.location}</p>
                       {item.memo && <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{item.memo}</p>}
                       <p className="mt-2 text-xs font-semibold text-slate-500">{item.estimatedCost > 0 ? `예상 ${formatCost(item.estimatedCost)}원` : "비용 미정"}</p>
@@ -246,6 +284,14 @@ export default function ItineraryPlanner({ places }: { places: TravelPlace[] }) 
           <section role="dialog" aria-modal="true" aria-labelledby="itinerary-form-title" className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:max-w-2xl sm:rounded-xl sm:p-7">
             <div className="flex items-start justify-between gap-4"><div><h2 id="itinerary-form-title" className="text-xl font-bold">{editingId ? "일정 수정" : "새 일정 추가"}</h2><p className="mt-1 text-sm text-[var(--muted)]">하루 동선을 만들 수 있도록 시간과 장소를 입력해 주세요.</p></div><button onClick={closeModal} className="grid h-9 w-9 place-items-center rounded-md text-xl text-slate-500 hover:bg-slate-100" aria-label="창 닫기">×</button></div>
             <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+              <div>
+                <label htmlFor="linked-place" className="text-sm font-bold">보관함 여행지 연결</label>
+                <select id="linked-place" value={draft.placeId} onChange={(event) => selectSavedPlace(event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 outline-none focus:border-[var(--brand)]">
+                  <option value="">직접 입력</option>
+                  {places.map((place) => <option key={place.id} value={place.id}>{place.tripName} · {place.name} ({place.city})</option>)}
+                </select>
+                <p className="mt-1.5 text-xs text-[var(--muted)]">여행지를 선택하면 장소, 날짜, 비용과 메모를 자동으로 가져옵니다.</p>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><label htmlFor="plan-trip" className="text-sm font-bold">여행 이름 *</label><input id="plan-trip" list="plan-trip-options" value={draft.tripName} onChange={(event) => updateDraft("tripName", event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)]" /><datalist id="plan-trip-options">{tripNames.map((name) => <option key={name} value={name} />)}</datalist></div>
                 <div><label htmlFor="plan-title" className="text-sm font-bold">일정명 *</label><input id="plan-title" autoFocus value={draft.title} onChange={(event) => updateDraft("title", event.target.value)} placeholder="예: 아라시야마 산책" className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)]" /></div>

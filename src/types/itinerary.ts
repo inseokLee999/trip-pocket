@@ -8,6 +8,7 @@ export type ItineraryCategory =
 
 export type ItineraryItem = {
   id: string;
+  placeId: string;
   tripName: string;
   title: string;
   location: string;
