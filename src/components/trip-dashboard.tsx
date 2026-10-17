@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import AuthPanel from "@/components/auth-panel";
+import ItineraryPlanner from "@/components/itinerary-planner";
 import {
   placeCategories,
   type PlaceCategory,
@@ -71,6 +72,7 @@ function mapEmbedUrl(query: string) {
 
 export default function TripDashboard() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const [activeView, setActiveView] = useState<"places" | "plan">("places");
   const [places, setPlaces] = useState<TravelPlace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -359,14 +361,23 @@ export default function TripDashboard() {
               <p className="max-w-44 truncate text-[11px] text-[var(--muted)]">{user.email}</p>
             </div>
             <button onClick={handleLogout} className="rounded-lg border border-[var(--line)] px-3 py-2.5 text-sm font-semibold text-[var(--muted)] hover:bg-slate-50">로그아웃</button>
-            <button onClick={openCreateModal} className="rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]">
-              <span className="sm:hidden">+ 추가</span><span className="hidden sm:inline">+ 여행지 추가</span>
-            </button>
+            {activeView === "places" && (
+              <button onClick={openCreateModal} className="rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]">
+                <span className="sm:hidden">+ 추가</span><span className="hidden sm:inline">+ 여행지 추가</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       <div id="top" className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
+        <nav className="mb-7 flex gap-1 rounded-xl border border-[var(--line)] bg-white p-1" aria-label="여행 관리 메뉴">
+          <button onClick={() => setActiveView("places")} aria-current={activeView === "places" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "places" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행지 보관함</button>
+          <button onClick={() => setActiveView("plan")} aria-current={activeView === "plan" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "plan" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행 계획</button>
+        </nav>
+
+        {activeView === "places" ? (
+          <>
         <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">여행지</h1>
@@ -485,6 +496,10 @@ export default function TripDashboard() {
             </div>
           )}
         </section>
+          </>
+        ) : (
+          <ItineraryPlanner places={places} />
+        )}
       </div>
 
       <footer className="border-t border-[var(--line)] bg-white px-5 py-6 text-center text-xs text-[var(--muted)]">Trip Pocket · 개인 여행지 관리</footer>

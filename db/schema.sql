@@ -61,6 +61,30 @@ CREATE INDEX IF NOT EXISTS travel_places_category_idx
 CREATE INDEX IF NOT EXISTS travel_places_visit_date_idx
   ON travel_places (visit_date);
 
+CREATE TABLE IF NOT EXISTS itinerary_items (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  trip_name VARCHAR(80) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  location VARCHAR(200) NOT NULL,
+  category VARCHAR(20) NOT NULL
+    CHECK (category IN ('transport', 'sightseeing', 'food', 'stay', 'shopping', 'other')),
+  plan_date DATE NOT NULL,
+  start_time TIME,
+  end_time TIME,
+  estimated_cost INTEGER NOT NULL DEFAULT 0
+    CHECK (estimated_cost >= 0 AND estimated_cost <= 100000000),
+  memo TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS itinerary_items_user_date_idx
+  ON itinerary_items (user_id, plan_date, start_time);
+
+CREATE INDEX IF NOT EXISTS itinerary_items_user_trip_idx
+  ON itinerary_items (user_id, trip_name);
+
 INSERT INTO travel_places (
   id,
   name,
