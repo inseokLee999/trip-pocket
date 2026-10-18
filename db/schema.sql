@@ -61,6 +61,24 @@ CREATE INDEX IF NOT EXISTS travel_places_category_idx
 CREATE INDEX IF NOT EXISTS travel_places_visit_date_idx
   ON travel_places (visit_date);
 
+CREATE TABLE IF NOT EXISTS travel_place_photos (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  place_id UUID NOT NULL REFERENCES travel_places(id) ON DELETE CASCADE,
+  file_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(50) NOT NULL
+    CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif')),
+  byte_size INTEGER NOT NULL CHECK (byte_size > 0 AND byte_size <= 5242880),
+  image_data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS travel_place_photos_place_idx
+  ON travel_place_photos (place_id, created_at);
+
+CREATE INDEX IF NOT EXISTS travel_place_photos_user_idx
+  ON travel_place_photos (user_id);
+
 CREATE TABLE IF NOT EXISTS trips (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

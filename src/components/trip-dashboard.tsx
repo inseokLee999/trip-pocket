@@ -1,10 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 import AuthPanel from "@/components/auth-panel";
 import ItineraryPlanner from "@/components/itinerary-planner";
 import type { GooglePlaceResult } from "@/types/google-place";
+import type { PlacePhoto } from "@/types/place-photo";
 import {
   placeCategories,
   type PlaceCategory,
@@ -100,6 +102,9 @@ export default function TripDashboard() {
   const [isPlaceSearching, setIsPlaceSearching] = useState(false);
   const [placeSearchError, setPlaceSearchError] = useState("");
   const [placeAutofillNotice, setPlaceAutofillNotice] = useState("");
+  const [savedPhotos, setSavedPhotos] = useState<PlacePhoto[]>([]);
+  const [pendingPhotos, setPendingPhotos] = useState<Array<{ file: File; previewUrl: string }>>([]);
+  const [isPhotosLoading, setIsPhotosLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PlaceDraft>(emptyDraft);
   const [formError, setFormError] = useState("");
@@ -158,13 +163,23 @@ export default function TripDashboard() {
     if (!isModalOpen && !mapPlace) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (mapPlace) closeMap();
-        else closeModal();
+        if (mapPlace) {
+          setMapPlace(null);
+          setMapQuery("");
+          setActiveMapQuery("");
+        } else {
+          pendingPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+          setPendingPhotos([]);
+          setSavedPhotos([]);
+          setIsModalOpen(false);
+          setEditingId(null);
+          setFormError("");
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isModalOpen, mapPlace]);
+  }, [isModalOpen, mapPlace, pendingPhotos]);
 
   const filteredPlaces = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
@@ -219,6 +234,8 @@ export default function TripDashboard() {
     setPlaceSearchResults([]);
     setPlaceSearchError("");
     setPlaceAutofillNotice("");
+    clearPendingPhotos();
+    setSavedPhotos([]);
     setFormError("");
     setIsModalOpen(true);
   }
@@ -235,6 +252,9 @@ export default function TripDashboard() {
     setPlaceSearchResults([]);
     setPlaceSearchError("");
     setPlaceAutofillNotice("");
+    clearPendingPhotos();
+    setSavedPhotos([]);
+    void loadPhotos(place.id);
     setFormError("");
     setIsModalOpen(true);
   }
@@ -247,6 +267,8 @@ export default function TripDashboard() {
     setPlaceSearchResults([]);
     setPlaceSearchError("");
     setPlaceAutofillNotice("");
+    clearPendingPhotos();
+    setSavedPhotos([]);
     setFormError("");
   }
 
@@ -271,6 +293,75 @@ export default function TripDashboard() {
 
   function updateDraft<K extends keyof PlaceDraft>(key: K, value: PlaceDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearPendingPhotos() {
+    setPendingPhotos((current) => {
+      current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      return [];
+    });
+  }
+
+  async function loadPhotos(placeId: string) {
+    setIsPhotosLoading(true);
+    try {
+      const response = await fetch(`/api/places/${placeId}/photos`, { cache: "no-store" });
+      const payload = (await response.json()) as { photos?: PlacePhoto[]; message?: string };
+      if (!response.ok) throw new Error(payload.message);
+      setSavedPhotos(payload.photos ?? []);
+    } catch {
+      setFormError("첨부 사진을 불러오지 못했습니다.");
+    } finally {
+      setIsPhotosLoading(false);
+    }
+  }
+
+  function selectPhotos(files: FileList | null) {
+    if (!files) return;
+    const available = 5 - savedPhotos.length - pendingPhotos.length;
+    if (available <= 0) {
+      setFormError("사진은 여행지당 최대 5장까지 추가할 수 있습니다.");
+      return;
+    }
+    const validTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    const selected = Array.from(files).slice(0, available);
+    const invalid = selected.find((file) => !validTypes.has(file.type) || file.size <= 0 || file.size > 5 * 1024 * 1024);
+    if (invalid) {
+      setFormError("5MB 이하의 JPG, PNG, WebP 또는 GIF 사진만 추가할 수 있습니다.");
+      return;
+    }
+    setPendingPhotos((current) => [...current, ...selected.map((file) => ({ file, previewUrl: URL.createObjectURL(file) }))]);
+    setFormError("");
+  }
+
+  function removePendingPhoto(previewUrl: string) {
+    URL.revokeObjectURL(previewUrl);
+    setPendingPhotos((current) => current.filter((photo) => photo.previewUrl !== previewUrl));
+  }
+
+  async function deleteSavedPhoto(photo: PlacePhoto) {
+    if (!editingId) return;
+    try {
+      const response = await fetch(`/api/places/${editingId}/photos/${photo.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      setSavedPhotos((current) => current.filter((item) => item.id !== photo.id));
+      setNotice("사진을 삭제했습니다.");
+    } catch {
+      setFormError("사진을 삭제하지 못했습니다.");
+    }
+  }
+
+  async function uploadPendingPhotos(placeId: string) {
+    const uploaded: PlacePhoto[] = [];
+    for (const pending of pendingPhotos) {
+      const formData = new FormData();
+      formData.set("photo", pending.file);
+      const response = await fetch(`/api/places/${placeId}/photos`, { method: "POST", body: formData });
+      const payload = (await response.json()) as { photo?: PlacePhoto; message?: string };
+      if (!response.ok || !payload.photo) throw new Error(payload.message ?? "사진을 저장하지 못했습니다.");
+      uploaded.push(payload.photo);
+    }
+    return uploaded;
   }
 
   function selectDraftTrip(tripName: string) {
@@ -354,12 +445,22 @@ export default function TripDashboard() {
         throw new Error(payload.message ?? "여행지를 저장하지 못했습니다.");
       }
 
+      let photoMessage = "";
+      if (pendingPhotos.length > 0) {
+        try {
+          await uploadPendingPhotos(payload.place.id);
+          photoMessage = ` 사진 ${pendingPhotos.length}장도 함께 저장했습니다.`;
+        } catch (photoError) {
+          photoMessage = ` 여행지는 저장했지만 ${photoError instanceof Error ? photoError.message : "사진을 저장하지 못했습니다."}`;
+        }
+      }
+
       if (editingId) {
         setPlaces((current) => current.map((place) => (place.id === editingId ? payload.place! : place)));
-        setNotice("여행지 정보를 수정했습니다.");
+        setNotice(`여행지 정보를 수정했습니다.${photoMessage}`);
       } else {
         setPlaces((current) => [payload.place!, ...current]);
-        setNotice("새 여행지를 저장했습니다.");
+        setNotice(`새 여행지를 저장했습니다.${photoMessage}`);
       }
       closeModal();
     } catch (error) {
@@ -750,6 +851,14 @@ export default function TripDashboard() {
                 <label htmlFor="memo" className="text-sm font-bold">여행 메모</label>
                 <textarea id="memo" rows={4} value={draft.memo} onChange={(event) => updateDraft("memo", event.target.value)} placeholder="하고 싶은 일이나 기억하고 싶은 정보를 적어보세요." className="mt-2 w-full resize-none rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
               </div>
+
+              <section className="rounded-xl border border-[var(--line)] p-4" aria-labelledby="memo-photos-title">
+                <div className="flex items-start justify-between gap-4">
+                  <div><h3 id="memo-photos-title" className="text-sm font-bold">메모 사진</h3><p className="mt-1 text-xs leading-5 text-[var(--muted)]">JPG, PNG, WebP, GIF · 장당 최대 5MB · 최대 5장</p></div>
+                  <label className={`shrink-0 cursor-pointer rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-bold text-[var(--brand)] hover:bg-[var(--soft)] ${(savedPhotos.length + pendingPhotos.length) >= 5 ? "pointer-events-none opacity-40" : ""}`}>+ 사진 추가<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="sr-only" onChange={(event) => { selectPhotos(event.target.files); event.currentTarget.value = ""; }} /></label>
+                </div>
+                {isPhotosLoading ? <p className="mt-4 text-center text-xs text-[var(--muted)]">사진을 불러오는 중입니다.</p> : (savedPhotos.length + pendingPhotos.length) === 0 ? <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-xs text-[var(--muted)]">메모와 함께 기억할 사진을 추가해 보세요.</div> : <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{savedPhotos.map((photo) => <div key={photo.id} className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"><Image src={photo.url} alt={photo.fileName} fill sizes="(max-width: 640px) 50vw, 180px" unoptimized className="object-cover" /><button type="button" onClick={() => void deleteSavedPhoto(photo)} className="absolute right-2 top-2 rounded-full bg-slate-950/75 px-2.5 py-1 text-xs font-bold text-white opacity-90 hover:bg-rose-600" aria-label={`${photo.fileName} 삭제`}>삭제</button></div>)}{pendingPhotos.map((photo) => <div key={photo.previewUrl} className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100"><Image src={photo.previewUrl} alt={`${photo.file.name} 미리보기`} fill sizes="(max-width: 640px) 50vw, 180px" unoptimized className="object-cover" /><span className="absolute bottom-2 left-2 rounded bg-[var(--brand)] px-2 py-1 text-[10px] font-bold text-white">저장 예정</span><button type="button" onClick={() => removePendingPhoto(photo.previewUrl)} className="absolute right-2 top-2 rounded-full bg-slate-950/75 px-2.5 py-1 text-xs font-bold text-white hover:bg-rose-600" aria-label={`${photo.file.name} 취소`}>취소</button></div>)}</div>}
+              </section>
 
               {formError && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{formError}</p>}
 
