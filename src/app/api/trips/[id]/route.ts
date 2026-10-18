@@ -19,6 +19,8 @@ export async function PUT(request: Request, context: RouteContext<"/api/trips/[i
     const { id } = await context.params;
     const draft = parseTripDraft(await request.json().catch(() => null));
     if (!draft) return Response.json({ message: "여행 이름과 올바른 기간을 입력해 주세요." }, { status: 400 });
+    const currentTrip = await db.query<{ name: string }>("SELECT name FROM trips WHERE id = $1 AND user_id = $2", [id, user.id]);
+    if (!currentTrip.rows[0]) return Response.json({ message: "여행을 찾을 수 없습니다." }, { status: 404 });
 
     const outsideRange = await db.query(
       `SELECT 1 FROM itinerary_items WHERE trip_id = $1 AND user_id = $2 AND (plan_date < $3::date OR plan_date > $4::date) LIMIT 1`,
@@ -42,6 +44,10 @@ export async function PUT(request: Request, context: RouteContext<"/api/trips/[i
     await db.query(
       `UPDATE itinerary_items SET trip_name = $2, updated_at = CURRENT_TIMESTAMP WHERE trip_id = $1 AND user_id = $3`,
       [id, draft.name, user.id],
+    );
+    await db.query(
+      `UPDATE travel_places SET trip_name = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 AND trip_name = $3`,
+      [draft.name, user.id, currentTrip.rows[0].name],
     );
     return Response.json({ trip: result.rows[0] });
   } catch (error) {

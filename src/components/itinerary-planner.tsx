@@ -39,7 +39,7 @@ function placeDraft(place: TravelPlace, trip: Trip): ItineraryDraft {
   return { tripId: trip.id, placeId: place.id, tripName: trip.name, title: place.name, location: `${place.name}, ${place.city}, ${place.country}`, category: categoryFromPlace(place), planDate: place.visitDate && inRange(place.visitDate, trip) ? place.visitDate : trip.startDate, startTime: "", endTime: "", estimatedCost: place.estimatedCost, memo: place.memo };
 }
 
-export default function ItineraryPlanner({ places, initialPlace }: { places: TravelPlace[]; initialPlace?: TravelPlace | null }) {
+export default function ItineraryPlanner({ places, initialPlace, onTripSaved }: { places: TravelPlace[]; initialPlace?: TravelPlace | null; onTripSaved?: (trip: Trip, previousName?: string) => void }) {
   const [items, setItems] = useState<ItineraryItem[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [activeTripId, setActiveTripId] = useState("all");
@@ -123,11 +123,13 @@ export default function ItineraryPlanner({ places, initialPlace }: { places: Tra
     if (!tripDraft.name.trim() || !tripDraft.startDate || tripDraft.endDate < tripDraft.startDate) { setError("여행 이름과 올바른 시작일·종료일을 입력해 주세요."); return; }
     setIsSaving(true); setError("");
     try {
+      const previousName = editingTripId ? trips.find((trip) => trip.id === editingTripId)?.name : undefined;
       const response = await fetch(editingTripId ? `/api/trips/${editingTripId}` : "/api/trips", { method: editingTripId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...tripDraft, name: tripDraft.name.trim(), destination: tripDraft.destination.trim() }) });
       const payload = (await response.json()) as { trip?: Trip; message?: string };
       if (!response.ok || !payload.trip) throw new Error(payload.message ?? "여행을 저장하지 못했습니다.");
       const saved = payload.trip;
       setTrips((current) => editingTripId ? current.map((trip) => trip.id === saved.id ? saved : trip) : [...current, saved].sort((a, b) => a.startDate.localeCompare(b.startDate)));
+      onTripSaved?.(saved, previousName);
       if (editingTripId) setItems((current) => current.map((item) => item.tripId === saved.id ? { ...item, tripName: saved.name } : item));
       setActiveTripId(saved.id); setIsTripOpen(false); setEditingTripId(null); setNotice(editingTripId ? "여행 기간을 수정했습니다." : "여행을 만들었습니다.");
       if (pendingPlace) { setDraft(placeDraft(pendingPlace, saved)); setPendingPlace(null); setIsPlanOpen(true); }
@@ -163,6 +165,8 @@ export default function ItineraryPlanner({ places, initialPlace }: { places: Tra
     {trips.length > 0 && <div className="mt-7 flex gap-2 overflow-x-auto pb-2" aria-label="여행 선택"><button onClick={() => setActiveTripId("all")} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${activeTripId === "all" ? "bg-slate-900 text-white" : "border border-[var(--line)] bg-white text-slate-600"}`}>모든 여행</button>{trips.map((trip) => <button key={trip.id} onClick={() => setActiveTripId(trip.id)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${activeTripId === trip.id ? "bg-slate-900 text-white" : "border border-[var(--line)] bg-white text-slate-600"}`}>{trip.name}</button>)}</div>}
 
     {activeTrip && <div className="mt-4 rounded-2xl bg-slate-900 p-5 text-white sm:flex sm:items-center sm:justify-between"><div><p className="text-xs font-semibold text-slate-400">선택한 여행</p><h2 className="mt-1 text-xl font-bold">{activeTrip.name}</h2><p className="mt-2 text-sm text-slate-300">{activeTrip.destination || "목적지 미정"} · {formatShortDate(activeTrip.startDate)} – {formatShortDate(activeTrip.endDate)} · {dayCount(activeTrip.startDate, activeTrip.endDate)}일</p></div><button onClick={() => openTripEdit(activeTrip)} className="mt-4 rounded-lg border border-white/20 px-3.5 py-2 text-sm font-semibold hover:bg-white/10 sm:mt-0">여행 정보 수정</button></div>}
+
+    {activeTripId === "all" && trips.length > 0 && <section className="mt-4" aria-labelledby="all-trips-title"><div className="mb-3 flex items-center justify-between"><h2 id="all-trips-title" className="text-sm font-bold">내 여행 목록</h2><span className="text-xs text-[var(--muted)]">{trips.length}개 여행</span></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{trips.map((trip) => { const count = items.filter((item) => item.tripId === trip.id).length; return <button key={trip.id} onClick={() => setActiveTripId(trip.id)} className="rounded-xl border border-[var(--line)] bg-white p-4 text-left transition hover:border-slate-400 hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-bold">{trip.name}</p><p className="mt-1 truncate text-xs text-[var(--muted)]">{trip.destination || "목적지 미정"}</p></div><span className="shrink-0 rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-bold text-[var(--brand)]">{count}개 일정</span></div><p className="mt-4 text-xs font-semibold text-slate-500">{formatShortDate(trip.startDate)} – {formatShortDate(trip.endDate)} · {dayCount(trip.startDate, trip.endDate)}일</p></button>; })}</div></section>}
 
     <div className="mt-4 grid gap-3 sm:grid-cols-3"><Metric label="전체 일정" value={`${visibleItems.length}`} unit="개" /><Metric label="여행 일수" value={`${activeTrip ? dayCount(activeTrip.startDate, activeTrip.endDate) : groupedItems.length}`} unit="일" /><Metric label="일정 예상 비용" value={formatCost(totalCost)} unit="원" /></div>
     <div className="mt-6 rounded-xl border border-[var(--line)] bg-white p-4"><p className="text-sm font-bold">날짜별 타임라인</p><p className="mt-1 text-xs text-[var(--muted)]">시간순으로 정렬되며, 항목을 열어 장소·비용·메모를 수정할 수 있습니다.</p></div>

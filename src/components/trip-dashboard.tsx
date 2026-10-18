@@ -12,6 +12,7 @@ import {
   type PlaceStatus,
   type TravelPlace,
 } from "@/types/travel-place";
+import type { Trip } from "@/types/trip";
 import type { AuthUser } from "@/types/user";
 
 type StatusFilter = "all" | PlaceStatus;
@@ -75,6 +76,7 @@ export default function TripDashboard() {
   const [activeView, setActiveView] = useState<"places" | "plan">("places");
   const [plannerSeed, setPlannerSeed] = useState<TravelPlace | null>(null);
   const [places, setPlaces] = useState<TravelPlace[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [todayDate, setTodayDate] = useState("");
@@ -105,10 +107,18 @@ export default function TripDashboard() {
         const mePayload = (await meResponse.json()) as { user: AuthUser };
         if (!cancelled) setUser(mePayload.user);
 
-        const placesResponse = await fetch("/api/places", { cache: "no-store" });
-        const payload = (await placesResponse.json()) as { places?: TravelPlace[]; message?: string };
-        if (!placesResponse.ok) throw new Error(payload.message);
-        if (!cancelled) setPlaces(payload.places ?? []);
+        const [placesResponse, tripsResponse] = await Promise.all([
+          fetch("/api/places", { cache: "no-store" }),
+          fetch("/api/trips", { cache: "no-store" }),
+        ]);
+        const placesPayload = (await placesResponse.json()) as { places?: TravelPlace[]; message?: string };
+        const tripsPayload = (await tripsResponse.json()) as { trips?: Trip[]; message?: string };
+        if (!placesResponse.ok) throw new Error(placesPayload.message);
+        if (!tripsResponse.ok) throw new Error(tripsPayload.message);
+        if (!cancelled) {
+          setPlaces(placesPayload.places ?? []);
+          setTrips(tripsPayload.trips ?? []);
+        }
       } catch {
         if (!cancelled) setNotice("데이터베이스에서 여행지를 불러오지 못했습니다.");
       } finally {
@@ -179,11 +189,14 @@ export default function TripDashboard() {
   const plannedBudget = places
     .filter((place) => place.status === "wishlist")
     .reduce((total, place) => total + place.estimatedCost, 0);
-  const tripNames = useMemo(() => [...new Set(places.map((place) => place.tripName))].sort(), [places]);
+  const tripNames = useMemo(
+    () => [...new Set([...trips.map((trip) => trip.name), ...places.map((place) => place.tripName)])].sort(),
+    [places, trips],
+  );
 
   function openCreateModal() {
     setEditingId(null);
-    setDraft(emptyDraft);
+    setDraft({ ...emptyDraft, tripName: tripFilter !== "all" ? tripFilter : trips[0]?.name ?? emptyDraft.tripName });
     setFormError("");
     setIsModalOpen(true);
   }
@@ -328,10 +341,16 @@ export default function TripDashboard() {
     setUser(authenticatedUser);
     setIsLoading(true);
     try {
-      const response = await fetch("/api/places", { cache: "no-store" });
-      const payload = (await response.json()) as { places?: TravelPlace[]; message?: string };
-      if (!response.ok) throw new Error(payload.message);
-      setPlaces(payload.places ?? []);
+      const [placesResponse, tripsResponse] = await Promise.all([
+        fetch("/api/places", { cache: "no-store" }),
+        fetch("/api/trips", { cache: "no-store" }),
+      ]);
+      const placesPayload = (await placesResponse.json()) as { places?: TravelPlace[]; message?: string };
+      const tripsPayload = (await tripsResponse.json()) as { trips?: Trip[]; message?: string };
+      if (!placesResponse.ok) throw new Error(placesPayload.message);
+      if (!tripsResponse.ok) throw new Error(tripsPayload.message);
+      setPlaces(placesPayload.places ?? []);
+      setTrips(tripsPayload.trips ?? []);
     } catch {
       setNotice("여행지를 불러오지 못했습니다.");
     } finally {
@@ -345,6 +364,7 @@ export default function TripDashboard() {
     } finally {
       setUser(null);
       setPlaces([]);
+      setTrips([]);
       setIsModalOpen(false);
     }
   }
@@ -420,6 +440,23 @@ export default function TripDashboard() {
             </div>
           </div>
         </aside>
+
+        {tripNames.length > 0 && (
+          <section className="mt-6" aria-labelledby="saved-trips-title">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 id="saved-trips-title" className="text-sm font-bold">내 여행</h2>
+              <span className="text-xs text-[var(--muted)]">여행 계획과 같은 목록입니다</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              <button onClick={() => setTripFilter("all")} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${tripFilter === "all" ? "bg-slate-900 text-white" : "border border-[var(--line)] bg-white text-slate-600"}`}>모든 여행</button>
+              {tripNames.map((name) => {
+                const trip = trips.find((candidate) => candidate.name === name);
+                const count = places.filter((place) => place.tripName === name).length;
+                return <button key={name} onClick={() => setTripFilter(name)} className={`shrink-0 rounded-full px-4 py-2 text-left text-sm font-semibold ${tripFilter === name ? "bg-slate-900 text-white" : "border border-[var(--line)] bg-white text-slate-600"}`}><span>{name}</span><span className={`ml-2 text-xs ${tripFilter === name ? "text-slate-300" : "text-slate-400"}`}>{trip ? `${formatDate(trip.startDate)} · ` : ""}{count}곳</span></button>;
+              })}
+            </div>
+          </section>
+        )}
 
         <section className="mt-8" aria-labelledby="places-title">
           <div className="rounded-xl border border-[var(--line)] bg-white p-4 sm:p-5">
@@ -510,7 +547,19 @@ export default function TripDashboard() {
         </section>
           </>
         ) : (
-          <ItineraryPlanner places={places} initialPlace={plannerSeed} />
+          <ItineraryPlanner
+            places={places}
+            initialPlace={plannerSeed}
+            onTripSaved={(savedTrip, previousName) => {
+              setTrips((current) => current.some((trip) => trip.id === savedTrip.id)
+                ? current.map((trip) => trip.id === savedTrip.id ? savedTrip : trip)
+                : [...current, savedTrip].sort((a, b) => a.startDate.localeCompare(b.startDate)));
+              if (previousName && previousName !== savedTrip.name) {
+                setPlaces((current) => current.map((place) => place.tripName === previousName ? { ...place, tripName: savedTrip.name } : place));
+                setTripFilter((current) => current === previousName ? savedTrip.name : current);
+              }
+            }}
+          />
         )}
       </div>
 
@@ -546,8 +595,8 @@ export default function TripDashboard() {
 
               <div>
                 <label htmlFor="tripName" className="text-sm font-bold">여행 이름 <span className="text-rose-500">*</span></label>
-                <input id="tripName" list="trip-name-options" value={draft.tripName} onChange={(event) => updateDraft("tripName", event.target.value)} placeholder="예: 2027 교토 여행" className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
-                <datalist id="trip-name-options">{tripNames.map((tripName) => <option key={tripName} value={tripName} />)}</datalist>
+                {tripNames.length > 0 ? <select id="tripName" value={draft.tripName} onChange={(event) => updateDraft("tripName", event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100">{tripNames.map((tripName) => <option key={tripName} value={tripName}>{tripName}</option>)}</select> : <input id="tripName" value={draft.tripName} onChange={(event) => updateDraft("tripName", event.target.value)} placeholder="예: 2027 교토 여행" className="mt-2 w-full rounded-lg border border-[var(--line)] px-3.5 py-2.5 outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />}
+                <p className="mt-1.5 text-xs text-[var(--muted)]">여행 계획에서 만든 여행 목록과 자동으로 연결됩니다.</p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
