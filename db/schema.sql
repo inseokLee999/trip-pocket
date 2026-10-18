@@ -61,6 +61,22 @@ CREATE INDEX IF NOT EXISTS travel_places_category_idx
 CREATE INDEX IF NOT EXISTS travel_places_visit_date_idx
   ON travel_places (visit_date);
 
+CREATE TABLE IF NOT EXISTS trips (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(80) NOT NULL,
+  destination VARCHAR(120) NOT NULL DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT trips_valid_date_range CHECK (end_date >= start_date),
+  CONSTRAINT trips_user_name_unique UNIQUE (user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS trips_user_dates_idx
+  ON trips (user_id, start_date, end_date);
+
 CREATE TABLE IF NOT EXISTS itinerary_items (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,6 +99,9 @@ CREATE TABLE IF NOT EXISTS itinerary_items (
 ALTER TABLE itinerary_items
   ADD COLUMN IF NOT EXISTS place_id UUID REFERENCES travel_places(id) ON DELETE SET NULL;
 
+ALTER TABLE itinerary_items
+  ADD COLUMN IF NOT EXISTS trip_id UUID REFERENCES trips(id) ON DELETE SET NULL;
+
 CREATE INDEX IF NOT EXISTS itinerary_items_user_date_idx
   ON itinerary_items (user_id, plan_date, start_time);
 
@@ -91,6 +110,36 @@ CREATE INDEX IF NOT EXISTS itinerary_items_user_trip_idx
 
 CREATE INDEX IF NOT EXISTS itinerary_items_user_place_idx
   ON itinerary_items (user_id, place_id);
+
+CREATE INDEX IF NOT EXISTS itinerary_items_user_trip_id_idx
+  ON itinerary_items (user_id, trip_id);
+
+INSERT INTO trips (id, user_id, name, destination, start_date, end_date)
+SELECT
+  md5(source.user_id::text || ':' || source.trip_name)::uuid,
+  source.user_id,
+  source.trip_name,
+  '',
+  COALESCE(MIN(source.item_date), CURRENT_DATE),
+  COALESCE(MAX(source.item_date), CURRENT_DATE)
+FROM (
+  SELECT user_id, trip_name, visit_date AS item_date
+  FROM travel_places
+  WHERE user_id IS NOT NULL AND trip_name <> ''
+  UNION ALL
+  SELECT user_id, trip_name, plan_date AS item_date
+  FROM itinerary_items
+  WHERE trip_name <> ''
+) AS source
+GROUP BY source.user_id, source.trip_name
+ON CONFLICT (user_id, name) DO NOTHING;
+
+UPDATE itinerary_items AS item
+SET trip_id = trip.id
+FROM trips AS trip
+WHERE item.trip_id IS NULL
+  AND item.user_id = trip.user_id
+  AND item.trip_name = trip.name;
 
 INSERT INTO travel_places (
   id,

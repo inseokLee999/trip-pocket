@@ -5,6 +5,7 @@ import type { ItineraryItem } from "@/types/itinerary";
 
 const returningFields = `
   id,
+  COALESCE(trip_id::text, '') AS "tripId",
   COALESCE(place_id::text, '') AS "placeId",
   trip_name AS "tripName",
   title,
@@ -25,6 +26,15 @@ export async function PUT(request: Request, context: RouteContext<"/api/itinerar
     const { id } = await context.params;
     const draft = parseItineraryDraft(await request.json().catch(() => null));
     if (!draft) return Response.json({ message: "입력한 일정 정보를 확인해 주세요." }, { status: 400 });
+    const tripResult = await db.query<{ name: string; startDate: string; endDate: string }>(
+      `SELECT name, to_char(start_date, 'YYYY-MM-DD') AS "startDate", to_char(end_date, 'YYYY-MM-DD') AS "endDate" FROM trips WHERE id = $1 AND user_id = $2`,
+      [draft.tripId, user.id],
+    );
+    const trip = tripResult.rows[0];
+    if (!trip) return Response.json({ message: "여행을 찾을 수 없습니다." }, { status: 400 });
+    if (draft.planDate < trip.startDate || draft.planDate > trip.endDate) {
+      return Response.json({ message: `일정 날짜는 ${trip.startDate}부터 ${trip.endDate} 사이여야 합니다.` }, { status: 400 });
+    }
     if (draft.placeId) {
       const place = await db.query("SELECT 1 FROM travel_places WHERE id = $1 AND user_id = $2", [draft.placeId, user.id]);
       if (!place.rowCount) return Response.json({ message: "연결할 여행지를 찾을 수 없습니다." }, { status: 400 });
@@ -33,14 +43,14 @@ export async function PUT(request: Request, context: RouteContext<"/api/itinerar
     const result = await db.query<ItineraryItem>(
       `
         UPDATE itinerary_items SET
-          place_id = NULLIF($2, '')::uuid, trip_name = $3, title = $4, location = $5, category = $6,
-          plan_date = $7::date, start_time = NULLIF($8, '')::time,
-          end_time = NULLIF($9, '')::time, estimated_cost = $10, memo = $11,
+          trip_id = $2::uuid, place_id = NULLIF($3, '')::uuid, trip_name = $4, title = $5, location = $6, category = $7,
+          plan_date = $8::date, start_time = NULLIF($9, '')::time,
+          end_time = NULLIF($10, '')::time, estimated_cost = $11, memo = $12,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND user_id = $12
+        WHERE id = $1 AND user_id = $13
         RETURNING ${returningFields}
       `,
-      [id, draft.placeId, draft.tripName, draft.title, draft.location, draft.category, draft.planDate, draft.startTime, draft.endTime, draft.estimatedCost, draft.memo, user.id],
+      [id, draft.tripId, draft.placeId, trip.name, draft.title, draft.location, draft.category, draft.planDate, draft.startTime, draft.endTime, draft.estimatedCost, draft.memo, user.id],
     );
     if (!result.rows[0]) return Response.json({ message: "일정을 찾을 수 없습니다." }, { status: 404 });
     return Response.json({ item: result.rows[0] });

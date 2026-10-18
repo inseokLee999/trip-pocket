@@ -46,3 +46,18 @@ a {
   background: #bfe4d9;
   color: #123b33;
 }
+
+.input {
+  margin-top: 0.5rem;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: white;
+  padding: 0.625rem 0.875rem;
+  font-weight: 400;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--brand);
+}
