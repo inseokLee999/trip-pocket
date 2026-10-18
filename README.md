@@ -57,6 +57,11 @@ psql -d trip_pocket -f db/schema.sql
 `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY`에 입력합니다. Maps Embed API는 키와
 결제 계정 등록이 필요하므로 키를 저장소에 커밋하지 마세요.
 
+Google 장소 검색 결과로 장소명·주소·카테고리·참고 가격을 자동 입력하려면
+같은 프로젝트에서 `Places API (New)`를 활성화하고 서버용 키를
+`GOOGLE_MAPS_API_KEY`에 입력합니다. 서버용 키는 브라우저에 노출되지 않으며,
+Places API의 가격 정보가 없는 장소는 예상 비용을 자동 변경하지 않습니다.
+
 ```bash
 npm install
 npm run dev

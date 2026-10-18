@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import AuthPanel from "@/components/auth-panel";
 import ItineraryPlanner from "@/components/itinerary-planner";
+import type { GooglePlaceResult } from "@/types/google-place";
 import {
   placeCategories,
   type PlaceCategory,
@@ -95,6 +96,10 @@ export default function TripDashboard() {
   const [activeMapQuery, setActiveMapQuery] = useState("");
   const [placeSearchQuery, setPlaceSearchQuery] = useState("");
   const [activePlaceSearchQuery, setActivePlaceSearchQuery] = useState("");
+  const [placeSearchResults, setPlaceSearchResults] = useState<GooglePlaceResult[]>([]);
+  const [isPlaceSearching, setIsPlaceSearching] = useState(false);
+  const [placeSearchError, setPlaceSearchError] = useState("");
+  const [placeAutofillNotice, setPlaceAutofillNotice] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PlaceDraft>(emptyDraft);
   const [formError, setFormError] = useState("");
@@ -211,6 +216,9 @@ export default function TripDashboard() {
     });
     setPlaceSearchQuery(defaultTrip?.destination ?? "");
     setActivePlaceSearchQuery("");
+    setPlaceSearchResults([]);
+    setPlaceSearchError("");
+    setPlaceAutofillNotice("");
     setFormError("");
     setIsModalOpen(true);
   }
@@ -224,6 +232,9 @@ export default function TripDashboard() {
     const searchQuery = placeSearchQueryForDraft(editableFields);
     setPlaceSearchQuery(searchQuery);
     setActivePlaceSearchQuery(searchQuery);
+    setPlaceSearchResults([]);
+    setPlaceSearchError("");
+    setPlaceAutofillNotice("");
     setFormError("");
     setIsModalOpen(true);
   }
@@ -233,6 +244,9 @@ export default function TripDashboard() {
     setEditingId(null);
     setPlaceSearchQuery("");
     setActivePlaceSearchQuery("");
+    setPlaceSearchResults([]);
+    setPlaceSearchError("");
+    setPlaceAutofillNotice("");
     setFormError("");
   }
 
@@ -269,7 +283,7 @@ export default function TripDashboard() {
     if (!placeSearchQuery && trip?.destination) setPlaceSearchQuery(trip.destination);
   }
 
-  function searchPlaceOnMap() {
+  async function searchPlaceOnMap() {
     const query = placeSearchQuery.trim() || placeSearchQueryForDraft(draft);
     if (!query) {
       setFormError("Google Maps에서 검색할 장소명이나 지역을 입력해 주세요.");
@@ -278,6 +292,37 @@ export default function TripDashboard() {
     setPlaceSearchQuery(query);
     setActivePlaceSearchQuery(query);
     setFormError("");
+    setPlaceSearchError("");
+    setPlaceSearchResults([]);
+    setIsPlaceSearching(true);
+    try {
+      const response = await fetch(`/api/maps/places?q=${encodeURIComponent(query)}`, { cache: "no-store" });
+      const payload = (await response.json()) as { places?: GooglePlaceResult[]; message?: string };
+      if (!response.ok) throw new Error(payload.message ?? "장소 정보를 불러오지 못했습니다.");
+      setPlaceSearchResults(payload.places ?? []);
+      if (!payload.places?.length) setPlaceSearchError("일치하는 장소를 찾지 못했습니다. 검색어를 더 구체적으로 입력해 주세요.");
+    } catch (searchError) {
+      setPlaceSearchError(searchError instanceof Error ? searchError.message : "장소 정보를 불러오지 못했습니다.");
+    } finally {
+      setIsPlaceSearching(false);
+    }
+  }
+
+  function applyGooglePlace(place: GooglePlaceResult) {
+    setDraft((current) => ({
+      ...current,
+      name: place.name,
+      country: place.country || current.country,
+      city: place.city || current.city,
+      category: place.category,
+      estimatedCost: place.estimatedCost ?? current.estimatedCost,
+    }));
+    setPlaceSearchQuery(`${place.name}, ${place.address}`);
+    setActivePlaceSearchQuery(`${place.name}, ${place.address}`);
+    setPlaceAutofillNotice(place.estimatedCost === null
+      ? "장소 정보를 입력했습니다. Google 가격 정보가 없어 예상 비용은 기존 값을 유지했습니다."
+      : `장소 정보와 예상 비용을 입력했습니다. ${place.priceLabel}`);
+    setPlaceSearchResults([]);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -648,9 +693,12 @@ export default function TripDashboard() {
                   </div>
                   <div className="mt-3 flex gap-2">
                     <label htmlFor="place-map-search" className="sr-only">Google Maps 장소 검색어</label>
-                    <input id="place-map-search" value={placeSearchQuery} onChange={(event) => setPlaceSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); searchPlaceOnMap(); } }} placeholder="예: 성산일출봉 제주" className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
-                    <button type="button" onClick={searchPlaceOnMap} className="shrink-0 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-700">검색</button>
+                    <input id="place-map-search" value={placeSearchQuery} onChange={(event) => setPlaceSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPlaceOnMap(); } }} placeholder="예: 성산일출봉 제주" className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-emerald-100" />
+                    <button type="button" onClick={() => void searchPlaceOnMap()} disabled={isPlaceSearching} className="shrink-0 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60">{isPlaceSearching ? "검색 중…" : "검색"}</button>
                   </div>
+                  {placeSearchError && <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">{placeSearchError}</p>}
+                  {placeAutofillNotice && <p role="status" className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">{placeAutofillNotice}</p>}
+                  {placeSearchResults.length > 0 && <div className="mt-3 space-y-2" aria-label="Google 장소 검색 결과">{placeSearchResults.map((place) => <button key={place.id} type="button" onClick={() => applyGooglePlace(place)} className="flex w-full items-start justify-between gap-3 rounded-lg border border-[var(--line)] bg-white p-3 text-left hover:border-[var(--brand)]"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{place.name}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--muted)]">{place.address}</p><p className="mt-1 text-xs font-semibold text-[var(--brand)]">{place.category} · {place.priceLabel}</p></div><span className="shrink-0 rounded-md bg-[var(--soft)] px-2.5 py-1.5 text-xs font-bold text-[var(--brand)]">선택</span></button>)}</div>}
                 </div>
                 {activePlaceSearchQuery && googleMapsApiKey ? <iframe key={activePlaceSearchQuery} title={`${activePlaceSearchQuery} Google Maps 검색 결과`} src={mapEmbedUrl(activePlaceSearchQuery)} className="h-64 w-full border-0 border-t border-[var(--line)] bg-white" loading="lazy" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /> : <div className="grid min-h-28 place-items-center border-t border-[var(--line)] bg-white px-5 text-center"><p className="text-xs leading-5 text-[var(--muted)]">{googleMapsApiKey ? "검색하면 이곳에 Google Maps 결과가 표시됩니다." : "Google Maps API 키를 설정하면 실제 검색 결과가 표시됩니다."}</p></div>}
               </section>
