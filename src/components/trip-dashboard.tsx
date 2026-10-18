@@ -73,7 +73,7 @@ function mapEmbedUrl(query: string) {
 
 export default function TripDashboard() {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
-  const [activeView, setActiveView] = useState<"places" | "plan">("places");
+  const [activeView, setActiveView] = useState<"places" | "plan">("plan");
   const [plannerSeed, setPlannerSeed] = useState<TravelPlace | null>(null);
   const [places, setPlaces] = useState<TravelPlace[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -383,7 +383,7 @@ export default function TripDashboard() {
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--brand)] text-sm font-black text-white">TP</span>
             <div>
               <p className="text-base font-bold tracking-tight">Trip Pocket</p>
-              <p className="text-[11px] text-[var(--muted)]">개인 여행지 관리</p>
+              <p className="text-[11px] text-[var(--muted)]">여행 계획과 장소 관리</p>
             </div>
           </a>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -402,17 +402,18 @@ export default function TripDashboard() {
       </header>
 
       <div id="top" className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
-        <nav className="mb-7 flex gap-1 rounded-xl border border-[var(--line)] bg-white p-1" aria-label="여행 관리 메뉴">
-          <button onClick={showPlaces} aria-current={activeView === "places" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "places" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행지 보관함</button>
-          <button onClick={() => setActiveView("plan")} aria-current={activeView === "plan" ? "page" : undefined} className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-bold transition ${activeView === "plan" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}>여행 계획</button>
+        <nav className="mb-7 grid grid-cols-2 gap-1 rounded-xl border border-[var(--line)] bg-white p-1" aria-label="여행 관리 메뉴">
+          <button onClick={() => setActiveView("plan")} aria-current={activeView === "plan" ? "page" : undefined} className={`rounded-lg px-3 py-2.5 text-left transition sm:px-4 ${activeView === "plan" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}><span className="block text-sm font-bold">내 여행</span><span className={`mt-0.5 hidden text-[11px] sm:block ${activeView === "plan" ? "text-emerald-100" : "text-slate-400"}`}>여행별 일정과 기간 관리</span></button>
+          <button onClick={showPlaces} aria-current={activeView === "places" ? "page" : undefined} className={`rounded-lg px-3 py-2.5 text-left transition sm:px-4 ${activeView === "places" ? "bg-[var(--brand)] text-white" : "text-[var(--muted)] hover:bg-slate-50"}`}><span className="block text-sm font-bold">여행지 보관함</span><span className={`mt-0.5 hidden text-[11px] sm:block ${activeView === "places" ? "text-emerald-100" : "text-slate-400"}`}>장소 검색과 저장 목록 관리</span></button>
         </nav>
 
         {activeView === "places" ? (
           <>
         <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">여행지</h1>
-            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">가고 싶은 장소와 다녀온 여행을 한곳에서 관리하세요.</p>
+            <p className="mb-1 text-xs font-bold uppercase tracking-[0.16em] text-[var(--brand)]">Place Library</p>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">여행지 보관함</h1>
+            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">가고 싶은 장소를 모으고, 필요한 여행에 연결하세요.</p>
           </div>
           <p className="text-sm text-[var(--muted)]">모든 변경사항은 PostgreSQL에 저장됩니다.</p>
         </section>
@@ -444,8 +445,8 @@ export default function TripDashboard() {
         {tripNames.length > 0 && (
           <section className="mt-6" aria-labelledby="saved-trips-title">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 id="saved-trips-title" className="text-sm font-bold">내 여행</h2>
-              <span className="text-xs text-[var(--muted)]">여행 계획과 같은 목록입니다</span>
+              <h2 id="saved-trips-title" className="text-sm font-bold">여행별 분류</h2>
+              <span className="text-xs text-[var(--muted)]">선택한 여행의 장소만 모아봅니다</span>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2">
               <button onClick={() => setTripFilter("all")} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${tripFilter === "all" ? "bg-slate-900 text-white" : "border border-[var(--line)] bg-white text-slate-600"}`}>모든 여행</button>
@@ -563,7 +564,7 @@ export default function TripDashboard() {
         )}
       </div>
 
-      <footer className="border-t border-[var(--line)] bg-white px-5 py-6 text-center text-xs text-[var(--muted)]">Trip Pocket · 개인 여행지 관리</footer>
+      <footer className="border-t border-[var(--line)] bg-white px-5 py-6 text-center text-xs text-[var(--muted)]">Trip Pocket · 내 여행을 계획하고 장소를 모으는 공간</footer>
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModal(); }}>
